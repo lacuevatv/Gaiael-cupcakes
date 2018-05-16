@@ -5,7 +5,7 @@ window.wp = window.wp || {};
 /**
  * The builder version and product name will be updated by grunt release task. Do not edit!
  */
-window.et_builder_version = '3.1.1';
+window.et_builder_version = '3.2.2';
 window.et_builder_product_name = 'Divi';
 
 ( function($) {
@@ -2972,6 +2972,7 @@ window.et_builder_product_name = 'Divi';
 				var defaults   = {};
 				var options_selector = typeof option_tabs_selector !== 'undefined' && '' !== option_tabs_selector ? option_tabs_selector : 'input, select, textarea, #et_pb_content_main';
 				var shortcode_name = thisClass.model.get( 'module_type' );
+				var address = thisClass.model.get( '_address' );
 				var $et_form_validation;
 
 				shortcode_name = shortcode_name.indexOf( 'et_pb_' ) === -1 ? ( 'et_pb_' + shortcode_name ) : shortcode_name;
@@ -3037,10 +3038,14 @@ window.et_builder_product_name = 'Divi';
 
 				// Delete migrated attributes to avoid unwanted value re-assignment
 				// Their values were migrated to new attributes at this point
-				if ( name_changes &&  ! _.isUndefined( name_changes[shortcode_name] ) ) {
-					_.forEach( name_changes[shortcode_name], function( new_name, old_name ) {
+				if ( name_changes &&  ! _.isUndefined( name_changes[ address ] ) ) {
+					_.forEach( name_changes[ address ], function( new_name, old_name ) {
 						unsetAttrs.push( 'et_pb_' + old_name );
 					});
+
+					// After being used, _builder version is updated thus making the migration obsolete.
+					// To avoid migration being re-implemented and producing incorrect attrs, current migration has to be removed
+					delete et_pb_options.et_pb_module_settings_migrations.name_changes[ address ];
 				}
 
 				this.$( options_selector ).each( function() {
@@ -3075,7 +3080,11 @@ window.et_builder_product_name = 'Divi';
 					}
 
 					// Validate colorpicker - if invalid color given, return to default color
-					if ( $this_el.hasClass( 'et-pb-color-picker-hex' ) && new Color( $this_el.val() ).error && ! $this_el.hasClass( 'et-pb-is-cleared' ) ) {
+					var is_divider_color = name.indexOf('divider_color') > -1;
+					if ( $this_el.hasClass( 'et-pb-color-picker-hex' )
+						&& new Color( $this_el.val() ).error
+						&& ! $this_el.hasClass( 'et-pb-is-cleared' )
+						&& ! is_divider_color ) {
 						$this_el.val( $this_el.data( 'selected-value') );
 					}
 
@@ -4513,7 +4522,7 @@ window.et_builder_product_name = 'Divi';
 											$preview.addClass('et-pb-option-preview--empty');
 										}
 									}
-									
+
 									// Preview should be rendered as non-empty even if current color is default
 									if (has_preview && '' !== current_value) {
 										$preview.removeClass('et-pb-option-preview--empty');
@@ -5466,7 +5475,7 @@ window.et_builder_product_name = 'Divi';
 
 								// Remove clear marker class name to make color validation works again
 								$this.wpColorPicker('color', default_value).val(default_value).addClass('et-pb-is-cleared');
-								
+
 								if ('' === default_value) {
 									$option_container.find('.et-pb-option-preview').removeAttr('style').addClass('et-pb-option-preview--empty');
 								}
@@ -6033,7 +6042,7 @@ window.et_builder_product_name = 'Divi';
 					}
 				}
 
-				// we have enought data to render removed component view at this point
+				// we have enough data to render removed component view at this point
 				if ('removed' === this.model.get('component_status')) {
 					return this;
 				}
@@ -8181,7 +8190,8 @@ window.et_builder_product_name = 'Divi';
 			//ignore_template_tag, current_row_cid, global_id, is_reinit, after_section, global_parent
 			createLayoutFromContent : function(content, parent_cid, inner_shortcodes, additional_options, parent_address) {
 				var this_el = this;
-				var all_shortcodes_in_content = !_.isUndefined(content) && '' !== content ? content.match(/\[([^<>&\/\[\]\x00-\x20=]+)/g).join('|').replace(/\[/g, '') : '';
+				var all_shortcodes_matches = !_.isUndefined(content) && '' !== content ? content.match(/\[([^\W\/\[\]\x00-\x20=]+)/g) : '';
+				var all_shortcodes_in_content = all_shortcodes_matches && _.isArray(all_shortcodes_matches) ? all_shortcodes_matches.join('|').replace(/\[/g, '') : '';
 				var all_registered_shortcodes = this.getShortCodeParentTags().split('|');
 				var et_pb_shortcodes_tags = typeof inner_shortcodes === 'undefined' || '' === inner_shortcodes ? this.getShortCodeParentTags(all_shortcodes_in_content) : this.getShortCodeChildTags();
 				var reg_exp = window.wp.shortcode.regexp(et_pb_shortcodes_tags);
@@ -8214,7 +8224,8 @@ window.et_builder_product_name = 'Divi';
 						type : shortcode_name,
 						cid : module_cid,
 						created : 'manually',
-						module_type : shortcode_name
+						module_type : shortcode_name,
+						component_status : ''
 					};
 
 					if (typeof additional_options_received.current_row_cid !== 'undefined' && '' !== additional_options_received.current_row_cid) {
@@ -9375,11 +9386,19 @@ window.et_builder_product_name = 'Divi';
 				var new_address     = 'section' === module_type ? index.toString() : parent_address + '.' + index.toString();
 				var path            = _.isUndefined( current_address ) ? false : 'et_pb_module_settings_migrations.value_changes.' + current_address;
 				var has_migrations  = path ? has( et_pb_options, path ) : false;
+				var has_name_changes_migration = has( et_pb_options, 'et_pb_module_settings_migrations.name_changes' ) && ! _.isUndefined( et_pb_options.et_pb_module_settings_migrations.name_changes[current_address] );
 
-				if ( has_migrations && new_address !== current_address ) {
+				if ( new_address !== current_address ) {
 					// Update module settings migration data
-					et_pb_options.et_pb_module_settings_migrations.value_changes[new_address] = _.clone( et_pb_options.et_pb_module_settings_migrations.value_changes[current_address] );
-					delete et_pb_options.et_pb_module_settings_migrations.value_changes[current_address];
+					if ( has_migrations ) {
+						et_pb_options.et_pb_module_settings_migrations.value_changes[new_address] = _.clone( et_pb_options.et_pb_module_settings_migrations.value_changes[current_address] );
+						delete et_pb_options.et_pb_module_settings_migrations.value_changes[current_address];
+					}
+
+					if ( has_name_changes_migration ) {
+						et_pb_options.et_pb_module_settings_migrations.name_changes[new_address] = _.clone( et_pb_options.et_pb_module_settings_migrations.name_changes[current_address] );
+						delete et_pb_options.et_pb_module_settings_migrations.name_changes[current_address];
+					}
 				}
 
 				module.set( { _address: new_address } );
@@ -10218,7 +10237,7 @@ window.et_builder_product_name = 'Divi';
 		function et_pb_activate_gallery( $gallery_button ) {
 			$gallery_button.click( function( event ) {
 				var $this_el = $(this),
-					$gallery_ids = $gallery_button.closest( '.et-pb-options-tab' ).find( '.et-pb-option-gallery_ids .et-pb-gallery-ids-field' ),
+					$gallery_ids = $gallery_button.next( '.et-pb-gallery' ),
 					$gallery_orderby = $gallery_button.closest( '.et-pb-options-tab' ).find( '.et-pb-option-gallery_orderby .et-pb-gallery-ids-field' );
 
 				event.preventDefault();
@@ -10364,7 +10383,7 @@ window.et_builder_product_name = 'Divi';
 			}).done( function( data, status, response ) {
 				data = JSON.parse( data );
 
-				$accounts_select.html( _.template( data.accounts_list )( settingsView.model.attributes ) );
+				$accounts_select.html( _.template( data.accounts_list ).bind( settingsView )( settingsView.model.attributes ) );
 				complete( data );
 
 			}).fail( complete );
@@ -10400,7 +10419,7 @@ window.et_builder_product_name = 'Divi';
 			}).done( function( data, status, response ) {
 				data = JSON.parse( data );
 
-				$accounts_select.html( _.template( data.accounts_list )( settingsView.model.attributes ) );
+				$accounts_select.html( _.template( data.accounts_list ).bind( settingsView )( settingsView.model.attributes ) );
 				complete( data );
 
 			}).fail( complete );
@@ -16338,7 +16357,7 @@ window.et_builder_product_name = 'Divi';
 				$main_setting.wpColorPicker( 'color', default_value );
 
 				if ( default_value === '' ) {
-					$main_setting.siblings('.wp-picker-clear').trigger('click');
+					$option_container.find('.wp-picker-clear').trigger('click');
 				}
 
 				if ( ! $this_el.hasClass( 'et-pb-reset-setting' ) ) {
